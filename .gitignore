@@ -1,0 +1,21 @@
+# Environment and Secrets
+.env
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Project Data
+*.xlsx
+*.csv
+Supplier_POC_Mapping.json
+
+# Build and Packaging
+build/
+dist/
+*.spec
+
+# IDEs
+.vscode/
+.idea/
