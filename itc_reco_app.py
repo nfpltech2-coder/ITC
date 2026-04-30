@@ -591,7 +591,7 @@ class ITCRecoApp(tk.Tk):
         if error > 0:
             msg += f"\nFailed: {error}"
         
-        messagebox.showinfo("Zoho Push", msg)
+        messagebox.showinfo("Shakti Push", msg)
 
     def generate_output(self):
         save_path = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel files", "*.xlsx")])
