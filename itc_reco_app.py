@@ -9,6 +9,8 @@ from datetime import datetime
 import requests
 import json
 import time
+import calendar
+from tkcalendar import DateEntry
 from dotenv import load_dotenv
 
 def get_base_path():
@@ -95,7 +97,13 @@ class ITCRecoApp(tk.Tk):
         self.content_frame.pack(fill="both", expand=True, padx=20, pady=20)
         
         self.mismatched_data = None
-        self.filtered_data = None        
+        self.filtered_data = None
+        
+        # Calculate default due date (last day of current month)
+        now = datetime.now()
+        last_day = calendar.monthrange(now.year, now.month)[1]
+        self.default_due_date = f"{last_day}-{now.strftime('%b-%Y')}"
+        
         self.setup_ui()
         self.setup_footer()
 
@@ -146,6 +154,30 @@ class ITCRecoApp(tk.Tk):
         self.filter_entry = ttk.Entry(filter_frame, textvariable=self.filter_var, font=("Arial", 10))
         self.filter_entry.pack(fill="x", pady=5)
         
+        # Due Date Section
+        due_date_frame = ttk.Frame(self.sidebar)
+        due_date_frame.pack(pady=10, fill="x")
+        ttk.Label(due_date_frame, text="Set Due Date (for Shakti):", font=("Arial", 9, "bold")).pack(anchor="w", pady=(0, 5))
+        
+        # Calculate default date object
+        now = datetime.now()
+        last_day = calendar.monthrange(now.year, now.month)[1]
+        default_date = datetime(now.year, now.month, last_day)
+
+        self.due_date_var = tk.StringVar()
+        self.due_date_var.trace_add("write", self.sync_due_date_to_tree)
+        
+        # Use DateEntry for a dropdown calendar
+        self.due_date_picker = DateEntry(due_date_frame, 
+                                        textvariable=self.due_date_var,
+                                        date_pattern='dd-mm-yyyy',
+                                        font=("Arial", 10),
+                                        background=THEME_COLOR,
+                                        foreground='white',
+                                        borderwidth=2)
+        self.due_date_picker.set_date(default_date)
+        self.due_date_picker.pack(fill="x", pady=5)
+        
         # Legend Section
         legend_frame = ttk.Frame(self.sidebar)
         legend_frame.pack(side="bottom", fill="x", pady=20)
@@ -184,19 +216,21 @@ class ITCRecoApp(tk.Tk):
         table_container = ttk.Frame(right_frame)
         table_container.pack(fill="both", expand=True)
         
-        self.tree = ttk.Treeview(table_container, columns=("sn", "date", "type", "invoice", "tax_val"), show="headings")
+        self.tree = ttk.Treeview(table_container, columns=("sn", "date", "due_date", "type", "invoice", "tax_val"), show="headings")
         
         self.tree.heading("sn", text="Supplier Name")
         self.tree.heading("date", text="Invoice Date")
+        self.tree.heading("due_date", text="Due Date")
         self.tree.heading("type", text="Mismatch Type")
         self.tree.heading("invoice", text="Invoice Number")
         self.tree.heading("tax_val", text="Taxable Value")
         
-        self.tree.column("sn", width=300, minwidth=200)
+        self.tree.column("sn", width=250, minwidth=150)
         self.tree.column("date", width=100, minwidth=100, anchor="center")
-        self.tree.column("type", width=200, minwidth=200)
-        self.tree.column("invoice", width=120, minwidth=120, anchor="center")
-        self.tree.column("tax_val", width=120, minwidth=100, anchor="e")
+        self.tree.column("due_date", width=100, minwidth=100, anchor="center")
+        self.tree.column("type", width=200, minwidth=150)
+        self.tree.column("invoice", width=120, minwidth=100, anchor="center")
+        self.tree.column("tax_val", width=110, minwidth=100, anchor="e")
         
         # Scrollbars
         v_scroll = ttk.Scrollbar(table_container, orient="vertical", command=self.tree.yview)
@@ -232,7 +266,7 @@ class ITCRecoApp(tk.Tk):
 
         self.zoho_btn_frame = tk.Frame(footer_frame, bg=THEME_COLOR)
         self.zoho_btn_frame.pack(side="right", padx=(0, 10))
-        self.zoho_btn = ModernButton(self.zoho_btn_frame, text="Push to Zoho Creator", command=self.push_to_zoho, color=THEME_COLOR)
+        self.zoho_btn = ModernButton(self.zoho_btn_frame, text="Push to Shakti", command=self.push_to_zoho, color=THEME_COLOR)
         self.zoho_btn.pack()
         self.zoho_btn.configure_state("disabled")
 
@@ -306,6 +340,25 @@ class ITCRecoApp(tk.Tk):
         # Deprecated
         pass
 
+    def get_formatted_due_date(self):
+        """Convert the numeric date from picker to dd-MMM-yyyy."""
+        raw_date = self.due_date_var.get()
+        try:
+            # DateEntry uses the pattern 'dd-mm-yyyy'
+            dt = datetime.strptime(raw_date, '%d-%m-%Y')
+            return dt.strftime('%d-%b-%Y')
+        except:
+            return raw_date
+
+    def sync_due_date_to_tree(self, *args):
+        if not hasattr(self, "tree"): return
+        new_due_date = self.get_formatted_due_date()
+        for item in self.tree.get_children():
+            values = list(self.tree.item(item, "values"))
+            if len(values) > 2:
+                values[2] = new_due_date
+                self.tree.item(item, values=values)
+
     def apply_filter(self, *args):
         if self.mismatched_data is None: return
         
@@ -325,13 +378,15 @@ class ITCRecoApp(tk.Tk):
         data = data[data['Origin'].astype(str).str.upper().isin(self.active_types)]
             
         if 'Taxable Value' in data.columns:
-            # Clean Taxable Value: replace non-numeric with NaN, then sort desc
+            # Clean Taxable Value: use .loc to avoid SettingWithCopyWarning
+            data = data.copy()
             data['TaxVal_num'] = pd.to_numeric(data['Taxable Value'], errors='coerce')
             data = data.sort_values(by='TaxVal_num', ascending=False, na_position='last')
             # Drop the temporary column
             data = data.drop(columns=['TaxVal_num'])
             
         self.filtered_data = data
+        current_due_date = self.get_formatted_due_date()
 
         for _, row in self.filtered_data.iterrows():
             origin = str(row.get('Origin', '')).strip().upper()
@@ -346,7 +401,7 @@ class ITCRecoApp(tk.Tk):
             
             type_text = "2B Done / Book Pending" if origin == "2B" else "Booking Done / 2B Pending"
             
-            self.tree.insert("", "end", values=(supplier, inv_date, type_text, inv_no, tax_val))
+            self.tree.insert("", "end", values=(supplier, inv_date, current_due_date, type_text, inv_no, tax_val))
             
         self.status_label.configure(text=f"Showing {len(self.filtered_data)} records", foreground=THEME_COLOR)
 
@@ -393,10 +448,10 @@ class ITCRecoApp(tk.Tk):
                     data_to_push.append(match.iloc[0])
             
             records_to_push = pd.DataFrame(data_to_push)
-            confirm_msg = f"Push {len(records_to_push)} SELECTED records to Zoho Creator?"
+            confirm_msg = f"Push {len(records_to_push)} SELECTED records to Shakti?"
         else:
             records_to_push = self.filtered_data
-            confirm_msg = f"Push ALL {len(records_to_push)} filtered records to Zoho Creator?"
+            confirm_msg = f"Push ALL {len(records_to_push)} filtered records to Shakti?"
 
         refresh_token = os.getenv("ZOHO_REFRESH_TOKEN")
         if not refresh_token:
@@ -407,7 +462,7 @@ class ITCRecoApp(tk.Tk):
             return
 
         self.zoho_btn.configure_state("disabled")
-        self.status_label.configure(text="Pushing to Zoho...", foreground=THEME_COLOR)
+        self.status_label.configure(text="Pushing to Shakti...", foreground=THEME_COLOR)
         
         threading.Thread(target=self._push_task, args=(records_to_push,), daemon=True).start()
 
@@ -429,54 +484,101 @@ class ITCRecoApp(tk.Tk):
             "Content-Type": "application/json"
         }
 
+        # Batching logic: Zoho Creator V2 supports bulk record creation (max 100 per request)
+        batch_size = 100
         success_count = 0
         error_count = 0
-
+        
+        # Convert records to list of dicts for easier batching
+        all_records_data = []
         for _, row in records.iterrows():
             origin = str(row.get('Origin', '')).strip().upper()
             mismatch_type = "2B Done / Book Pending" if origin == "2B" else "Booking Done / 2B Pending"
             
-            # Prepare payload
-            payload = {
-                "data": {
-                    "Supplier_Name": str(row.get('Supplier Name', '')),
-                    "Invoice_Date": self.format_date_str(row.get('Invoice Date')),
-                    "Mismatch_Type": mismatch_type,
-                    "Invoice_No": str(row.get('Invoice No.', '')),
-                    "Taxable_Value": str(row.get('Taxable Value', '0'))
-                }
-            }
+            all_records_data.append({
+                "Supplier_Name": str(row.get('Supplier Name', '')),
+                "Invoice_Date": self.format_date_str(row.get('Invoice Date')),
+                "Due_Date": self.get_formatted_due_date(),
+                "Mismatch_Type": mismatch_type,
+                "Invoice_No": str(row.get('Invoice No.', '')),
+                "Taxable_Value": str(row.get('Taxable Value', '0'))
+            })
 
-            # Retry Logic
+        # Process in batches
+        for i in range(0, len(all_records_data), batch_size):
+            batch = all_records_data[i:i + batch_size]
+            payload = {"data": batch}
+            
+            # Retry Logic for the batch
             max_retries = 3
             attempt = 0
             pushed = False
             
             while attempt < max_retries and not pushed:
                 try:
-                    resp = requests.post(url, json=payload, headers=headers, timeout=10)
+                    resp = requests.post(url, json=payload, headers=headers, timeout=30)
+                    
                     if resp.status_code in [200, 201]:
-                        success_count += 1
+                        # Handle both list and dict response formats from Zoho
+                        resp_data = resp.json()
+                        batch_results = []
+                        
+                        if isinstance(resp_data, list):
+                            batch_results = resp_data
+                        elif isinstance(resp_data, dict):
+                            # Try result -> data first
+                            result_obj = resp_data.get("result", {})
+                            if isinstance(result_obj, dict):
+                                batch_results = result_obj.get("data", [])
+                            elif isinstance(result_obj, list):
+                                batch_results = result_obj
+                            
+                            # Fallback: if no individual results yet, check the overall code
+                            if not batch_results and resp_data.get("code") == 3000:
+                                success_count += len(batch)
+                                pushed = True
+                                continue
+
+                        if not batch_results:
+                            print(f"Unexpected response format: {resp_data}")
+                            error_count += len(batch)
+                        else:
+                            for res in batch_results:
+                                # Ensure 'res' is a dictionary before calling .get()
+                                if isinstance(res, dict):
+                                    code = str(res.get("code", ""))
+                                    status = str(res.get("status", ""))
+                                    if code == "3000" or status == "success":
+                                        success_count += 1
+                                    else:
+                                        error_count += 1
+                                        err_msg = res.get('message') or res.get('error') or 'Record error'
+                                        print(f"Record Error: {err_msg}")
+                                else:
+                                    # If it's not a dict, we can't parse it easily
+                                    print(f"Non-dict record result: {res}")
+                                    error_count += 1
                         pushed = True
                     elif resp.status_code == 429: # Rate limit
-                        time.sleep(2 * (attempt + 1))
+                        time.sleep(5 * (attempt + 1))
                     else:
-                        print(f"Failed to push row (Status {resp.status_code}): {resp.text}")
-                        # Don't retry on 400/404 etc unless it's a server error
+                        print(f"!!! Batch Failed !!!")
+                        print(f"Status Code: {resp.status_code}")
+                        print(f"Response: {resp.text}")
                         if resp.status_code >= 500:
-                            time.sleep(1)
+                            time.sleep(2)
                         else:
                             break
                 except Exception as e:
-                    print(f"Request Attempt {attempt+1} Error: {e}")
-                    time.sleep(1)
+                    print(f"Batch Request Attempt {attempt+1} Exception: {str(e)}")
+                    time.sleep(2)
                 attempt += 1
 
             if not pushed:
-                error_count += 1
+                error_count += len(batch)
             
-            # Small delay between records to prevent rate limiting
-            time.sleep(0.1)
+            # Small delay between batches to stay safe with rate limits
+            time.sleep(0.5)
 
         self.after(0, lambda: self._finalize_push(success_count, error_count))
 
