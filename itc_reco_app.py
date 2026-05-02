@@ -260,7 +260,7 @@ class ITCRecoApp(tk.Tk):
         # Re-using ModernButton for Footer as well
         self.gen_btn_frame = tk.Frame(footer_frame, bg=SUCCESS_COLOR)
         self.gen_btn_frame.pack(side="right")
-        self.generate_btn = ModernButton(self.gen_btn_frame, text="Generate Sheet1 Output", command=self.generate_output, color=SUCCESS_COLOR)
+        self.generate_btn = ModernButton(self.gen_btn_frame, text="Generate Excel Output", command=self.generate_output, color=SUCCESS_COLOR)
         self.generate_btn.pack()
         self.generate_btn.configure_state("disabled")
 
