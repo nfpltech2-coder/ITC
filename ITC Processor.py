@@ -74,7 +74,7 @@ class ITCRecoApp(tk.Tk):
     def __init__(self):
         super().__init__()
 
-        self.title("ITC Reconciliation Tool")
+        self.title("ITC Reconciliation Tracker")
         self.geometry("1400x850")
         self.state('zoomed')
         self.configure(bg=BG_COLOR)
