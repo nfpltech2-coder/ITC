@@ -1,4 +1,4 @@
-# ITC Reconciliation Tool (Shakti) User Guide
+# ITC Processor (Shakti) User Guide
 
 ## Introduction
 The ITC Reconciliation Tool is a desktop application designed for Nagarkot Forwarders to reconcile GST data between **2B** (GST Portal) and **Books** (Internal Accounting). It automatically identifies mismatches, allows for bulk due-date assignment, and pushes data directly to the **Shakti** tracking system.
@@ -6,7 +6,7 @@ The ITC Reconciliation Tool is a desktop application designed for Nagarkot Forwa
 ## How to Use
 
 ### 1. Launching the App
-1. Locate the `itc_reco_app.exe` file.
+1. Locate the `ITC Processor.exe` file.
 2. Double-click to launch.
 3. Ensure you have an active internet connection if you plan to push data to Shakti.
 

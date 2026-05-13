@@ -1,4 +1,4 @@
-# ITC Reconciliation Tool (Shakti)
+# ITC Processor (Shakti)
 
 ![Nagarkot Logo](assets/logo.png)
 
@@ -46,7 +46,7 @@ The tool automates the process of identifying mismatched records (mismatches in 
 For detailed instructions on how to use the application, please refer to the [USER_GUIDE.md](./USER_GUIDE.md).
 
 ## Project Structure
-- `itc_reco_app.py`: Main application entry point.
+- `ITC Processor.py`: Main application entry point.
 - `assets/`: Contains UI branding elements (Logo, Icons).
 - `requirements.txt`: List of required Python packages.
 - `.gitignore`: Configured to ignore local data and environment secrets.
