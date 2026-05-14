@@ -239,6 +239,13 @@ class ITCRecoApp(tk.Tk):
         
         self.tree.pack(side="left", fill="both", expand=True)
 
+        # Context menu for copying key fields from preview rows
+        self.tree_context_menu = tk.Menu(self, tearoff=0)
+        self.tree_context_menu.add_command(label="Copy Supplier Name", command=lambda: self.copy_tree_context_value("sn"))
+        self.tree_context_menu.add_command(label="Copy Invoice Number", command=lambda: self.copy_tree_context_value("invoice"))
+        self.tree.bind("<Button-3>", self.show_tree_context_menu)
+        self.tree.bind("<Button-2>", self.show_tree_context_menu)
+
     def toggle_type_filter(self, type_code):
         if type_code in self.active_types:
             self.active_types.remove(type_code)
@@ -404,6 +411,31 @@ class ITCRecoApp(tk.Tk):
             self.tree.insert("", "end", values=(supplier, inv_date, current_due_date, type_text, inv_no, tax_val))
             
         self.status_label.configure(text=f"Showing {len(self.filtered_data)} records", foreground=THEME_COLOR)
+
+    def show_tree_context_menu(self, event):
+        item = self.tree.identify_row(event.y)
+        if not item:
+            return
+        self.tree.selection_set(item)
+        try:
+            self.tree_context_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            self.tree_context_menu.grab_release()
+
+    def copy_tree_context_value(self, column_key):
+        if not self.tree.selection():
+            return
+        values = self.tree.item(self.tree.selection()[0], "values")
+        col_idx = {"sn": 0, "invoice": 4}.get(column_key)
+        if col_idx is None or col_idx >= len(values):
+            return
+        value = str(values[col_idx]).strip()
+        if not value:
+            return
+        self.clipboard_clear()
+        self.clipboard_append(value)
+        field_name = "Supplier Name" if column_key == "sn" else "Invoice Number"
+        self.status_label.configure(text=f"Copied {field_name} to clipboard", foreground=THEME_COLOR)
 
     def get_access_token(self):
         client_id = os.getenv("ZOHO_CLIENT_ID")
