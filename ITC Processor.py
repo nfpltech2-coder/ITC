@@ -384,13 +384,11 @@ class ITCRecoApp(tk.Tk):
         # Apply Type Filter (Multi-toggle)
         data = data[data['Origin'].astype(str).str.upper().isin(self.active_types)]
             
-        if 'Taxable Value' in data.columns:
-            # Clean Taxable Value: use .loc to avoid SettingWithCopyWarning
-            data = data.copy()
-            data['TaxVal_num'] = pd.to_numeric(data['Taxable Value'], errors='coerce')
-            data = data.sort_values(by='TaxVal_num', ascending=False, na_position='last')
-            # Drop the temporary column
-            data = data.drop(columns=['TaxVal_num'])
+        # Sort by Invoice Date descending
+        data = data.copy()
+        data['Invoice_Date_dt'] = pd.to_datetime(data['Invoice Date'], errors='coerce')
+        data = data.sort_values(by='Invoice_Date_dt', ascending=False, na_position='last')
+        data = data.drop(columns=['Invoice_Date_dt'])
             
         self.filtered_data = data
         current_due_date = self.get_formatted_due_date()
