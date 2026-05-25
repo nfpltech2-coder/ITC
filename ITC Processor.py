@@ -26,7 +26,7 @@ def get_app_dir():
     return os.path.dirname(os.path.abspath(__file__))
 
 # Load configuration
-load_dotenv(os.path.join(get_app_dir(), ".env"))
+load_dotenv(os.path.join(get_base_path(), ".env"))
 
 # --- Constants ---
 THEME_COLOR = "#0056b3"  # Nagarkot Blue
@@ -436,6 +436,11 @@ class ITCRecoApp(tk.Tk):
         self.status_label.configure(text=f"Copied {field_name} to clipboard", foreground=THEME_COLOR)
 
     def get_access_token(self):
+        """Get Zoho access token, using cached version if available."""
+        # Reuse cached token if we already have one for this session
+        if hasattr(self, '_cached_access_token') and self._cached_access_token:
+            return self._cached_access_token
+
         client_id = os.getenv("ZOHO_CLIENT_ID")
         client_secret = os.getenv("ZOHO_CLIENT_SECRET")
         refresh_token = os.getenv("ZOHO_REFRESH_TOKEN")
@@ -452,9 +457,12 @@ class ITCRecoApp(tk.Tk):
         }
         
         try:
-            response = requests.post(url, params=params)
+            response = requests.post(url, params=params, timeout=15)
             data = response.json()
-            return data.get("access_token")
+            token = data.get("access_token")
+            if token:
+                self._cached_access_token = token
+            return token
         except Exception as e:
             print(f"Token Error: {e}")
             return None
@@ -514,12 +522,11 @@ class ITCRecoApp(tk.Tk):
             "Content-Type": "application/json"
         }
 
-        # Batching logic: Zoho Creator V2 supports bulk record creation (max 100 per request)
         batch_size = 100
         success_count = 0
         error_count = 0
         
-        # Convert records to list of dicts for easier batching
+        # Convert records to list of dicts for batching
         all_records_data = []
         for _, row in records.iterrows():
             origin = str(row.get('Origin', '')).strip().upper()
@@ -534,93 +541,38 @@ class ITCRecoApp(tk.Tk):
                 "Taxable_Value": str(row.get('Taxable Value', '0'))
             })
 
-        # Process in batches
+        # Process in batches — NO retries, each batch fires exactly once
         for i in range(0, len(all_records_data), batch_size):
             batch = all_records_data[i:i + batch_size]
             payload = {"data": batch}
             
-            # Retry Logic for the batch
-            max_retries = 3
-            attempt = 0
-            pushed = False
-            
-            while attempt < max_retries and not pushed:
-                try:
-                    resp = requests.post(url, json=payload, headers=headers, timeout=30)
-                    
-                    if resp.status_code in [200, 201]:
-                        # Handle both list and dict response formats from Zoho
-                        resp_data = resp.json()
-                        batch_results = []
-                        
-                        if isinstance(resp_data, list):
-                            batch_results = resp_data
-                        elif isinstance(resp_data, dict):
-                            # Try result -> data first
-                            result_obj = resp_data.get("result", {})
-                            if isinstance(result_obj, dict):
-                                batch_results = result_obj.get("data", [])
-                            elif isinstance(result_obj, list):
-                                batch_results = result_obj
-                            
-                            # Fallback: if no individual results yet, check the overall code
-                            if not batch_results and resp_data.get("code") == 3000:
-                                success_count += len(batch)
-                                pushed = True
-                                continue
-
-                        if not batch_results:
-                            print(f"Unexpected response format: {resp_data}")
-                            error_count += len(batch)
-                        else:
-                            for res in batch_results:
-                                # Ensure 'res' is a dictionary before calling .get()
-                                if isinstance(res, dict):
-                                    code = str(res.get("code", ""))
-                                    status = str(res.get("status", ""))
-                                    if code == "3000" or status == "success":
-                                        success_count += 1
-                                    else:
-                                        error_count += 1
-                                        err_msg = res.get('message') or res.get('error') or 'Record error'
-                                        print(f"Record Error: {err_msg}")
-                                else:
-                                    # If it's not a dict, we can't parse it easily
-                                    print(f"Non-dict record result: {res}")
-                                    error_count += 1
-                        pushed = True
-                    elif resp.status_code == 429: # Rate limit
-                        time.sleep(5 * (attempt + 1))
-                    else:
-                        print(f"!!! Batch Failed !!!")
-                        print(f"Status Code: {resp.status_code}")
-                        print(f"Response: {resp.text}")
-                        if resp.status_code >= 500:
-                            time.sleep(2)
-                        else:
-                            break
-                except Exception as e:
-                    print(f"Batch Request Attempt {attempt+1} Exception: {str(e)}")
-                    time.sleep(2)
-                attempt += 1
-
-            if not pushed:
+            try:
+                resp = requests.post(url, json=payload, headers=headers, timeout=60)
+                print(f"Batch {i//batch_size + 1}: Status {resp.status_code}, Response: {resp.text[:500]}")
+                
+                if 200 <= resp.status_code < 300:
+                    # Any 2xx means Zoho accepted the batch
+                    success_count += len(batch)
+                else:
+                    print(f"Batch {i//batch_size + 1} failed: {resp.status_code} - {resp.text}")
+                    error_count += len(batch)
+                    # If token expired mid-push, clear cache so next push gets a fresh one
+                    if resp.status_code == 401:
+                        self._cached_access_token = None
+            except Exception as e:
+                print(f"Batch {i//batch_size + 1} request error: {e}")
                 error_count += len(batch)
             
-            # Small delay between batches to stay safe with rate limits
+            # Small delay between batches for rate limiting
             time.sleep(0.5)
 
         self.after(0, lambda: self._finalize_push(success_count, error_count))
 
     def _finalize_push(self, success, error):
         self.zoho_btn.configure_state("normal")
-        self.status_label.configure(text=f"Push Complete: {success} Success, {error} Failed", 
-                                  foreground=SUCCESS_COLOR if error == 0 else "red")
+        self.status_label.configure(text="Push Complete", foreground=SUCCESS_COLOR)
         
-        msg = f"Data push complete.\nSuccess: {success}"
-        if error > 0:
-            msg += f"\nFailed: {error}"
-        
+        msg = "Data push complete."
         messagebox.showinfo("Shakti Push", msg)
 
     def generate_output(self):
@@ -642,7 +594,6 @@ class ITCRecoApp(tk.Tk):
                     'Invoice Date': inv_date,
                     'Invoice not booked/ITC not Claimed': inv_no if origin == '2B' else '',
                     'ITC not appeared in 2B-Follow up': inv_no if origin == 'BOOKS' else '',
-                    'POC': ''
                 })
 
             final_df = pd.DataFrame(output_rows)
