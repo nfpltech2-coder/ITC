@@ -5,17 +5,19 @@ venv/
 # Python
 __pycache__/
 *.py[cod]
+*.log
 
 # Project Data
 *.xlsx
 *.csv
-Supplier_POC_Mapping.json
+*.tmp
 
 # Build and Packaging
 build/
 dist/
 *.spec
 
-# IDEs
+# IDEs and OS Files
 .vscode/
 .idea/
+.DS_Store
