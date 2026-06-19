@@ -154,6 +154,16 @@ class ITCRecoApp(tk.Tk):
         self.filter_entry = ttk.Entry(filter_frame, textvariable=self.filter_var, font=("Arial", 10))
         self.filter_entry.pack(fill="x", pady=5)
         
+        # Entity Selection Section
+        entity_frame = ttk.Frame(self.sidebar)
+        entity_frame.pack(pady=10, fill="x")
+        ttk.Label(entity_frame, text="Select Entity:", font=("Arial", 9, "bold")).pack(anchor="w", pady=(0, 5))
+        
+        self.entity_var = tk.StringVar(value="")
+        self.entity_combo = ttk.Combobox(entity_frame, textvariable=self.entity_var, state="readonly", font=("Arial", 10))
+        self.entity_combo['values'] = ("Nagarkot Forwarders Pvt Ltd (HO)", "Nagarkot Logistics Pvt Ltd")
+        self.entity_combo.pack(fill="x", pady=5)
+
         # Due Date Section
         due_date_frame = ttk.Frame(self.sidebar)
         due_date_frame.pack(pady=10, fill="x")
@@ -472,6 +482,11 @@ class ITCRecoApp(tk.Tk):
             messagebox.showwarning("Warning", "No data to push.")
             return
 
+        selected_entity = self.entity_var.get()
+        if not selected_entity:
+            messagebox.showwarning("Warning", "Please select an Entity before pushing to Shakti.")
+            return
+
         selected_items = self.tree.selection()
         
         if selected_items:
@@ -502,9 +517,9 @@ class ITCRecoApp(tk.Tk):
         self.zoho_btn.configure_state("disabled")
         self.status_label.configure(text="Pushing to Shakti...", foreground=THEME_COLOR)
         
-        threading.Thread(target=self._push_task, args=(records_to_push,), daemon=True).start()
+        threading.Thread(target=self._push_task, args=(records_to_push, selected_entity), daemon=True).start()
 
-    def _push_task(self, records):
+    def _push_task(self, records, entity_name):
         token = self.get_access_token()
         if not token:
             self.after(0, lambda: messagebox.showerror("Error", "Failed to get Zoho Access Token."))
@@ -533,6 +548,7 @@ class ITCRecoApp(tk.Tk):
             mismatch_type = "2B Done / Book Pending" if origin == "2B" else "Booking Done / 2B Pending"
             
             all_records_data.append({
+                "Entity_Name": entity_name,
                 "Supplier_Name": str(row.get('Supplier Name', '')),
                 "Invoice_Date": self.format_date_str(row.get('Invoice Date')),
                 "Due_Date": self.get_formatted_due_date(),
