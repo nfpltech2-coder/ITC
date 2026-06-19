@@ -11,8 +11,7 @@ The ITC Reconciliation Tool is a desktop application designed for Nagarkot Forwa
 3. Ensure you have an active internet connection if you plan to push data to Shakti.
 
 ### 2. The Workflow (Step-by-Step)
-1. **Upload Data**: Click **"Upload INPUT File"** and select your reconciliation Excel sheet.
-   - *Constraint: The app specifically looks for a sheet containing "2B RECO" in the name.*
+1. **Upload Data**: Click **"Upload INPUT File"** and select your reconciliation Excel sheet. The app will automatically read the **first sheet** in the workbook.
 2. **Review Mismatches**: The table will automatically populate with records where `Status` is not "Matched".
 3. **Filter & Toggle**: Use the sidebar to search for specific suppliers or toggle between "2B Done" and "Booking Done" records using the colored legend.
 4. **Set Due Date**: Use the **Calendar Picker** in the sidebar to set the target completion date. This will immediately reflect on all records in the table.
@@ -36,7 +35,7 @@ If you see an error, check this table:
 
 | Message | What it means | Solution |
 | :--- | :--- | :--- |
-| "Could not find '2B RECO' sheet" | The Excel file doesn't have a tab named "2B RECO". | Rename the relevant tab in your Excel file to include "2B RECO". |
+
 | "Missing 'Status' column" | The selected sheet is not in the expected format. | Ensure your sheet has a column header named exactly "Status". |
 | "Zoho Refresh Token missing" | The credentials for Shakti are not set up. | Check your `.env` file and ensure the `ZOHO_REFRESH_TOKEN` is present. |
 | "Failed to get Access Token" | Network error or invalid credentials. | Check your internet connection and verify Zoho Client ID/Secret. |
@@ -44,7 +43,7 @@ If you see an error, check this table:
 
 ## Data Preparation Requirements
 For successful processing, your input Excel file must follow these rules:
-- **Sheet Name:** Must contain "2B RECO" (e.g., "2B RECO 25-26").
+- **Sheet Name:** The tool reads the **first sheet** in the uploaded Excel file. Ensure your data is on the first tab.
 - **Columns Required:** 
   - `Supplier Name`
   - `Invoice Date`

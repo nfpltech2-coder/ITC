@@ -302,24 +302,8 @@ class ITCRecoApp(tk.Tk):
 
         try:
             xl = pd.ExcelFile(path)
-            target_sheet = None
-            
-            # Prioritize 25-26 if current year
-            for sheet in xl.sheet_names:
-                if "2B RECO 25-26" in sheet.upper():
-                    target_sheet = sheet
-                    break
-            
-            if not target_sheet:
-                # Fallback to general search
-                for sheet in xl.sheet_names:
-                    if "2B RECO" in sheet.upper():
-                        target_sheet = sheet
-                        break
-            
-            if not target_sheet:
-                messagebox.showerror("Error", "Could not find '2B RECO' sheet in file.")
-                return
+            # Default to the first sheet if there are no specific naming requirements
+            target_sheet = xl.sheet_names[0]
 
             # Read Excel without assuming headers are on line 0 (sometimes they are deeper)
             df = pd.read_excel(path, sheet_name=target_sheet)
@@ -327,8 +311,17 @@ class ITCRecoApp(tk.Tk):
             # Clean column names (strip spaces, etc)
             df.columns = [str(c).strip() for c in df.columns]
 
-            if 'Status' not in df.columns:
-                messagebox.showerror("Error", f"Sheet '{target_sheet}' is missing the 'Status' column.\n\nAvailable columns: {list(df.columns)}")
+            required_cols = ['Supplier Name', 'Invoice Date', 'Invoice No.', 'Taxable Value', 'Status', 'Origin']
+            missing_cols = [col for col in required_cols if col not in df.columns]
+
+            if missing_cols:
+                err_msg = (
+                    f"The selected sheet '{target_sheet}' is missing required columns:\n"
+                    f"{', '.join(missing_cols)}\n\n"
+                    f"Please ensure your input Excel file contains these exact columns:\n"
+                    f"Supplier Name, Invoice Date, Invoice No., Taxable Value, Status, Origin"
+                )
+                messagebox.showerror("Invalid Excel Format", err_msg)
                 return
             
             # Filter logic: Status != 'Matched' AND Remarks-1 is empty
