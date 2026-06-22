@@ -161,7 +161,7 @@ class ITCRecoApp(tk.Tk):
         
         self.entity_var = tk.StringVar(value="")
         self.entity_combo = ttk.Combobox(entity_frame, textvariable=self.entity_var, state="readonly", font=("Arial", 10))
-        self.entity_combo['values'] = ("Nagarkot Forwarders Pvt Ltd (HO)", "Nagarkot Logistics Pvt Ltd")
+        self.entity_combo['values'] = ("NFPL (HO)", "NLPL")
         self.entity_combo.pack(fill="x", pady=5)
 
         # Due Date Section
