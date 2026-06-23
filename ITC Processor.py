@@ -226,7 +226,7 @@ class ITCRecoApp(tk.Tk):
         table_container = ttk.Frame(right_frame)
         table_container.pack(fill="both", expand=True)
         
-        self.tree = ttk.Treeview(table_container, columns=("sn", "date", "due_date", "type", "invoice", "tax_val"), show="headings")
+        self.tree = ttk.Treeview(table_container, columns=("sn", "date", "due_date", "type", "invoice", "tax_val", "status"), show="headings")
         
         self.tree.heading("sn", text="Supplier Name")
         self.tree.heading("date", text="Invoice Date")
@@ -234,13 +234,21 @@ class ITCRecoApp(tk.Tk):
         self.tree.heading("type", text="Mismatch Type")
         self.tree.heading("invoice", text="Invoice Number")
         self.tree.heading("tax_val", text="Taxable Value")
+        self.tree.heading("status", text="Status")
         
-        self.tree.column("sn", width=250, minwidth=150)
+        self.tree.column("sn", width=200, minwidth=150)
         self.tree.column("date", width=100, minwidth=100, anchor="center")
         self.tree.column("due_date", width=100, minwidth=100, anchor="center")
-        self.tree.column("type", width=200, minwidth=150)
+        self.tree.column("type", width=180, minwidth=150)
         self.tree.column("invoice", width=120, minwidth=100, anchor="center")
         self.tree.column("tax_val", width=110, minwidth=100, anchor="e")
+        self.tree.column("status", width=250, minwidth=150, anchor="center")
+        
+        # Tags for status coloring
+        self.tree.tag_configure("success", foreground="#15803d")
+        self.tree.tag_configure("error", foreground="#dc3545")
+        self.tree.tag_configure("checking", foreground=BRAND_BLUE if "BRAND_BLUE" in globals() else THEME_COLOR)
+        self.tree.tag_configure("skipped", foreground="#b45309")
         
         # Scrollbars
         v_scroll = ttk.Scrollbar(table_container, orient="vertical", command=self.tree.yview)
@@ -408,8 +416,9 @@ class ITCRecoApp(tk.Tk):
                 tax_val = str(tax_val)
             
             type_text = "2B Done / Book Pending" if origin == "2B" else "Booking Done / 2B Pending"
+            status_text = "Pending"
             
-            self.tree.insert("", "end", values=(supplier, inv_date, current_due_date, type_text, inv_no, tax_val))
+            self.tree.insert("", "end", values=(supplier, inv_date, current_due_date, type_text, inv_no, tax_val, status_text))
             
         self.status_label.configure(text=f"Showing {len(self.filtered_data)} records", foreground=THEME_COLOR)
 
@@ -486,18 +495,27 @@ class ITCRecoApp(tk.Tk):
             data_to_push = []
             for item_id in selected_items:
                 item_values = self.tree.item(item_id, 'values')
-                inv_no = item_values[3]
+                inv_no = item_values[4]  # index 4 is invoice number now
                 supplier = item_values[0]
                 match = self.filtered_data[(self.filtered_data['Invoice No.'].astype(str) == str(inv_no)) & 
                                          (self.filtered_data['Supplier Name'] == supplier)]
                 if not match.empty:
-                    data_to_push.append(match.iloc[0])
+                    data_to_push.append((item_id, match.iloc[0]))
             
-            records_to_push = pd.DataFrame(data_to_push)
-            confirm_msg = f"Push {len(records_to_push)} SELECTED records to Shakti?"
+            records_to_push_tuples = data_to_push
+            confirm_msg = f"Push {len(records_to_push_tuples)} SELECTED records to Shakti?"
         else:
-            records_to_push = self.filtered_data
-            confirm_msg = f"Push ALL {len(records_to_push)} filtered records to Shakti?"
+            records_to_push_tuples = []
+            for item_id in self.tree.get_children():
+                item_values = self.tree.item(item_id, 'values')
+                inv_no = item_values[4]
+                supplier = item_values[0]
+                match = self.filtered_data[(self.filtered_data['Invoice No.'].astype(str) == str(inv_no)) & 
+                                         (self.filtered_data['Supplier Name'] == supplier)]
+                if not match.empty:
+                    records_to_push_tuples.append((item_id, match.iloc[0]))
+                    
+            confirm_msg = f"Push ALL {len(records_to_push_tuples)} filtered records to Shakti?"
 
         refresh_token = os.getenv("ZOHO_REFRESH_TOKEN")
         if not refresh_token:
@@ -508,11 +526,67 @@ class ITCRecoApp(tk.Tk):
             return
 
         self.zoho_btn.configure_state("disabled")
-        self.status_label.configure(text="Pushing to Shakti...", foreground=THEME_COLOR)
+        self.status_label.configure(text="Checking for duplicates and pushing to Shakti...", foreground=THEME_COLOR)
         
-        threading.Thread(target=self._push_task, args=(records_to_push, selected_entity), daemon=True).start()
+        threading.Thread(target=self._push_task, args=(records_to_push_tuples, selected_entity), daemon=True).start()
 
-    def _push_task(self, records, entity_name):
+    def update_tree_status(self, item_id, status_text, tag=""):
+        try:
+            values = list(self.tree.item(item_id, "values"))
+            if len(values) >= 7:
+                values[6] = status_text
+                self.tree.item(item_id, values=values, tags=(tag,) if tag else ())
+                self.tree.see(item_id)
+        except Exception as e:
+            pass
+
+    def check_record_exists(self, base_url, app_owner, app_link_name, token, supplier, inv_date, inv_no):
+        report_link_name = os.getenv("ZOHO_REPORT_LINK_NAME", "All_ITC")
+        url = f"{base_url}/api/v2/{app_owner}/{app_link_name}/report/{report_link_name}"
+        
+        # Exclude Date from criteria to prevent Zoho date format mismatches.
+        criteria = f'(Supplier_Name == "{supplier}" && Invoice_No == "{inv_no}")'
+        params = {"criteria": criteria}
+        headers = {
+            "Authorization": f"Zoho-oauthtoken {token}",
+            "Content-Type": "application/json"
+        }
+        
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=15)
+            print(f"GET {url} params: {params} -> Status: {resp.status_code}")
+            
+            if resp.status_code == 404:
+                return False, "Report 'All_ITC' not found (404)"
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                records = data.get("data", [])
+                
+                # Check results
+                for rec in records:
+                    return True, None
+                    
+                return False, None
+            elif resp.status_code == 401:
+                try:
+                    err_json = resp.json()
+                    if "oauthscope" in err_json.get("message", "").lower() or err_json.get("code") == 1030:
+                        return False, "OAuth Scope Error: Your Zoho Token lacks READ permissions (ZohoCreator.report.READ). Please regenerate your token."
+                except:
+                    pass
+                return False, f"Auth Error (401): {resp.text}"
+            else:
+                err_msg = f"HTTP {resp.status_code}: {resp.text}"
+                print(f"GET Error Response: {err_msg}")
+                return False, err_msg
+                
+        except Exception as e:
+            err_msg = str(e)
+            print(f"Check Exists Exception: {err_msg}")
+            return False, err_msg
+
+    def _push_task(self, records_tuples, entity_name):
         token = self.get_access_token()
         if not token:
             self.after(0, lambda: messagebox.showerror("Error", "Failed to get Zoho Access Token."))
@@ -532,56 +606,85 @@ class ITCRecoApp(tk.Tk):
 
         batch_size = 100
         success_count = 0
+        skipped_count = 0
         error_count = 0
         
-        # Convert records to list of dicts for batching
-        all_records_data = []
-        for _, row in records.iterrows():
-            origin = str(row.get('Origin', '')).strip().upper()
-            mismatch_type = "2B Done / Book Pending" if origin == "2B" else "Booking Done / 2B Pending"
+        # Filter out duplicates first
+        records_to_push = []
+        for item_id, row in records_tuples:
+            supplier = str(row.get('Supplier Name', '')).strip()
+            inv_date = self.format_date_str(row.get('Invoice Date')).strip()
+            inv_no = str(row.get('Invoice No.', '')).strip()
             
-            all_records_data.append({
-                "Entity_Name": entity_name,
-                "Supplier_Name": str(row.get('Supplier Name', '')),
-                "Invoice_Date": self.format_date_str(row.get('Invoice Date')),
-                "Due_Date": self.get_formatted_due_date(),
-                "Mismatch_Type": mismatch_type,
-                "Invoice_No": str(row.get('Invoice No.', '')),
-                "Taxable_Value": str(row.get('Taxable Value', '0'))
-            })
+            self.after(0, lambda i=item_id: self.update_tree_status(i, "Syncing...", "checking"))
+            
+            exists, err = self.check_record_exists(base_url, app_owner, app_link_name, token, supplier, inv_date, inv_no)
+            
+            if err:
+                self.after(0, lambda i=item_id: self.update_tree_status(i, "Bypassing Check...", "checking"))
+                print(f"Bypassing duplicate check for {inv_no} due to API error: {err}")
+                exists = False
+            elif exists:
+                skipped_count += 1
+                self.after(0, lambda i=item_id: self.update_tree_status(i, "Skipped (Already Present)", "skipped"))
+                continue
+            else:
+                self.after(0, lambda i=item_id: self.update_tree_status(i, "Queued...", "checking"))
+                
+            if not exists:
+                origin = str(row.get('Origin', '')).strip().upper()
+                mismatch_type = "2B Done / Book Pending" if origin == "2B" else "Booking Done / 2B Pending"
+                
+                records_to_push.append({
+                    "item_id": item_id,
+                    "payload": {
+                        "Entity_Name": entity_name,
+                        "Supplier_Name": supplier,
+                        "Invoice_Date": inv_date,
+                        "Due_Date": self.get_formatted_due_date(),
+                        "Mismatch_Type": mismatch_type,
+                        "Invoice_No": inv_no,
+                        "Taxable_Value": str(row.get('Taxable Value', '0'))
+                    }
+                })
 
-        # Process in batches — NO retries, each batch fires exactly once
-        for i in range(0, len(all_records_data), batch_size):
-            batch = all_records_data[i:i + batch_size]
-            payload = {"data": batch}
+        # Process records one-by-one (Zoho Creator V2 Form POST requires single object)
+        for item in records_to_push:
+            item_id = item["item_id"]
+            self.after(0, lambda i=item_id: self.update_tree_status(i, "Syncing...", "checking"))
+            
+            payload = {"data": item["payload"]}
             
             try:
                 resp = requests.post(url, json=payload, headers=headers, timeout=60)
-                print(f"Batch {i//batch_size + 1}: Status {resp.status_code}, Response: {resp.text[:500]}")
+                print(f"POST Record {item['payload'].get('Invoice_No')}: Status {resp.status_code}")
                 
                 if 200 <= resp.status_code < 300:
-                    # Any 2xx means Zoho accepted the batch
-                    success_count += len(batch)
+                    success_count += 1
+                    status_msg = "Updated (No Dup Check)" if err else "Updated"
+                    self.after(0, lambda i=item_id, msg=status_msg: self.update_tree_status(i, msg, "success"))
                 else:
-                    print(f"Batch {i//batch_size + 1} failed: {resp.status_code} - {resp.text}")
-                    error_count += len(batch)
-                    # If token expired mid-push, clear cache so next push gets a fresh one
+                    print(f"POST failed: {resp.text}")
+                    error_count += 1
+                    self.after(0, lambda i=item_id: self.update_tree_status(i, f"Not Updated (Err {resp.status_code})", "error"))
+                    
                     if resp.status_code == 401:
                         self._cached_access_token = None
             except Exception as e:
-                print(f"Batch {i//batch_size + 1} request error: {e}")
-                error_count += len(batch)
+                print(f"POST request error: {e}")
+                error_count += 1
+                self.after(0, lambda i=item_id: self.update_tree_status(i, "Not Updated (Network Err)", "error"))
             
-            # Small delay between batches for rate limiting
-            time.sleep(0.5)
+            # Small delay to prevent rate limits
+            time.sleep(0.2)
 
-        self.after(0, lambda: self._finalize_push(success_count, error_count))
+        self.after(0, lambda: self._finalize_push(success_count, error_count, skipped_count))
 
-    def _finalize_push(self, success, error):
+    def _finalize_push(self, success, error, skipped):
         self.zoho_btn.configure_state("normal")
         self.status_label.configure(text="Push Complete", foreground=SUCCESS_COLOR)
         
-        msg = "Data push complete."
+        msg = f"Data push complete.\n\nSuccessfully Pushed: {success}\nAlready Present (Skipped): {skipped}\nErrors: {error}"
         messagebox.showinfo("Shakti Push", msg)
 
     def generate_output(self):
