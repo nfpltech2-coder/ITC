@@ -3,7 +3,7 @@
 ![Nagarkot Logo](assets/logo.png)
 
 ## Overview
-The **ITC Reconciliation Tool** (internally known as **Shakti**) is a robust desktop application built for Nagarkot Forwarders to streamline the reconciliation of GST Input Tax Credit (ITC) between the **GST 2B Portal** and internal **Books of Accounts**.
+The **ITC Reconciliation Tool** (internally known as **Shakti**) is a robust desktop application built for Nagarkot Forwarders to streamline the reconciliation of GST Input Tax Credit (ITC) between the **GST 2B/6A Portal** and internal **Books of Accounts**.
 
 The tool automates the process of identifying mismatched records (mismatches in origin, invoice numbers, or taxable values) and allows users to push these records in bulk to a cloud-based tracking system.
 
@@ -11,7 +11,7 @@ The tool automates the process of identifying mismatched records (mismatches in 
 - 🚀 **Automated Mismatch Detection**: Instantly identifies records where Status is not 'Matched'.
 - 📅 **Bulk Due Date Management**: Integrated calendar picker to assign due dates to hundreds of records at once.
 - ☁️ **High-Speed Cloud Integration**: Optimized bulk push to Shakti using batched API requests.
-- 🔍 **Live Filtering**: Search by supplier and toggle between 2B and Books records with a single click.
+- 🔍 **Live Filtering**: Search by supplier and toggle between 2B/6A and Books records with a single click.
 - 📊 **Excel Reporting**: Generate formatted reconciliation reports for offline use.
 
 ## Tech Stack

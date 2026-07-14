@@ -161,8 +161,9 @@ class ITCRecoApp(tk.Tk):
         
         self.entity_var = tk.StringVar(value="")
         self.entity_combo = ttk.Combobox(entity_frame, textvariable=self.entity_var, state="readonly", font=("Arial", 10))
-        self.entity_combo['values'] = ("NFPL (HO)", "NLPL")
+        self.entity_combo['values'] = ("NFPL (HO)", "NLPL", "NFPL (ISD)")
         self.entity_combo.pack(fill="x", pady=5)
+        self.entity_combo.bind("<<ComboboxSelected>>", self.on_entity_changed)
 
         # Due Date Section
         due_date_frame = ttk.Frame(self.sidebar)
@@ -201,8 +202,8 @@ class ITCRecoApp(tk.Tk):
         self.can_l1.pack(side="left", padx=(0, 5))
         self.lbl_l1 = ttk.Label(self.l1, text="2B Done / Book Pending", font=("Arial", 8))
         self.lbl_l1.pack(side="left")
-        self.l1.bind("<Button-1>", lambda e: self.toggle_type_filter("2B"))
-        self.lbl_l1.bind("<Button-1>", lambda e: self.toggle_type_filter("2B"))
+        self.l1.bind("<Button-1>", lambda e: self.toggle_legend_1())
+        self.lbl_l1.bind("<Button-1>", lambda e: self.toggle_legend_1())
 
         self.l2 = tk.Frame(legend_frame, bg=BG_COLOR, cursor="hand2")
         self.l2.pack(fill="x", pady=2)
@@ -210,8 +211,8 @@ class ITCRecoApp(tk.Tk):
         self.can_l2.pack(side="left", padx=(0, 5))
         self.lbl_l2 = ttk.Label(self.l2, text="Booking Done / 2B Pending", font=("Arial", 8))
         self.lbl_l2.pack(side="left")
-        self.l2.bind("<Button-1>", lambda e: self.toggle_type_filter("BOOKS"))
-        self.lbl_l2.bind("<Button-1>", lambda e: self.toggle_type_filter("BOOKS"))
+        self.l2.bind("<Button-1>", lambda e: self.toggle_legend_2())
+        self.lbl_l2.bind("<Button-1>", lambda e: self.toggle_legend_2())
 
         self.status_label = ttk.Label(self.sidebar, text="Ready", foreground=STALE_COLOR)
         self.status_label.pack(side="bottom", pady=10)
@@ -264,16 +265,47 @@ class ITCRecoApp(tk.Tk):
         self.tree.bind("<Button-3>", self.show_tree_context_menu)
         self.tree.bind("<Button-2>", self.show_tree_context_menu)
 
+    def toggle_legend_1(self):
+        code = "6A" if self.entity_var.get() == "NFPL (ISD)" else "2B"
+        self.toggle_type_filter(code)
+
+    def toggle_legend_2(self):
+        self.toggle_type_filter("BOOKS")
+
     def toggle_type_filter(self, type_code):
         if type_code in self.active_types:
             self.active_types.remove(type_code)
         else:
             self.active_types.add(type_code)
         
-        # UI Feedback for toggles
-        self.can_l1.configure(bg=ACCENT_2B if "2B" in self.active_types else "#e0e0e0")
-        self.can_l2.configure(bg=ACCENT_BOOKS if "BOOKS" in self.active_types else "#e0e0e0")
+        self.update_legend_ui()
+        self.apply_filter()
+
+    def update_legend_ui(self):
+        entity = self.entity_var.get()
+        is_isd = (entity == "NFPL (ISD)")
+        code_l1 = "6A" if is_isd else "2B"
+        code_l2 = "BOOKS"
         
+        self.can_l1.configure(bg=ACCENT_2B if code_l1 in self.active_types else "#e0e0e0")
+        self.can_l2.configure(bg=ACCENT_BOOKS if code_l2 in self.active_types else "#e0e0e0")
+
+    def on_entity_changed(self, event=None):
+        entity = self.entity_var.get()
+        if entity == "NFPL (ISD)":
+            self.lbl_l1.configure(text="6A Done / Book Pending")
+            self.lbl_l2.configure(text="Booking Done / 6A Pending")
+            if "2B" in self.active_types:
+                self.active_types.remove("2B")
+                self.active_types.add("6A")
+        else:
+            self.lbl_l1.configure(text="2B Done / Book Pending")
+            self.lbl_l2.configure(text="Booking Done / 2B Pending")
+            if "6A" in self.active_types:
+                self.active_types.remove("6A")
+                self.active_types.add("2B")
+        
+        self.update_legend_ui()
         self.apply_filter()
 
     def setup_footer(self):
@@ -415,7 +447,10 @@ class ITCRecoApp(tk.Tk):
             except:
                 tax_val = str(tax_val)
             
-            type_text = "2B Done / Book Pending" if origin == "2B" else "Booking Done / 2B Pending"
+            if self.entity_var.get() == "NFPL (ISD)":
+                type_text = "6A Done / Book Pending" if origin == "6A" else "Booking Done / 6A Pending"
+            else:
+                type_text = "2B Done / Book Pending" if origin == "2B" else "Booking Done / 2B Pending"
             status_text = "Pending"
             
             self.tree.insert("", "end", values=(supplier, inv_date, current_due_date, type_text, inv_no, tax_val, status_text))
@@ -633,7 +668,10 @@ class ITCRecoApp(tk.Tk):
                 
             if not exists:
                 origin = str(row.get('Origin', '')).strip().upper()
-                mismatch_type = "2B Done / Book Pending" if origin == "2B" else "Booking Done / 2B Pending"
+                if entity_name == "NFPL (ISD)":
+                    mismatch_type = "6A Done / Book Pending" if origin == "6A" else "Booking Done / 6A Pending"
+                else:
+                    mismatch_type = "2B Done / Book Pending" if origin == "2B" else "Booking Done / 2B Pending"
                 
                 records_to_push.append({
                     "item_id": item_id,
@@ -693,6 +731,12 @@ class ITCRecoApp(tk.Tk):
 
         try:
             output_rows = []
+            entity = self.entity_var.get()
+            is_isd = (entity == "NFPL (ISD)")
+            col_not_booked = 'Invoice not booked/ITC not Claimed'
+            col_not_appeared = 'ITC not appeared in 6A-Follow up' if is_isd else 'ITC not appeared in 2B-Follow up'
+            match_origin = '6A' if is_isd else '2B'
+
             # We export all mismatched data, not just filtered ones, unless requested otherwise.
             # Usually users want to filter to see, but export everything.
             for _, row in self.mismatched_data.iterrows():
@@ -704,12 +748,13 @@ class ITCRecoApp(tk.Tk):
                 output_rows.append({
                     'Supplier Name': supplier,
                     'Invoice Date': inv_date,
-                    'Invoice not booked/ITC not Claimed': inv_no if origin == '2B' else '',
-                    'ITC not appeared in 2B-Follow up': inv_no if origin == 'BOOKS' else '',
+                    col_not_booked: inv_no if origin == match_origin else '',
+                    col_not_appeared: inv_no if origin == 'BOOKS' else '',
+                    'POC': ''
                 })
 
             final_df = pd.DataFrame(output_rows)
-            cols = ['Supplier Name', 'Invoice Date', 'Invoice not booked/ITC not Claimed', 'ITC not appeared in 2B-Follow up', 'POC']
+            cols = ['Supplier Name', 'Invoice Date', col_not_booked, col_not_appeared, 'POC']
             final_df = final_df[cols]
 
             with pd.ExcelWriter(save_path, engine='openpyxl') as writer:
